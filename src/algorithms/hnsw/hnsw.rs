@@ -1,42 +1,14 @@
+use crate::algorithms::hnsw::node;
 use crate::linalg::vector::Vector;
 use crate::numeric::ordered_float::OrderedFloat;
-use std::hash::Hash;
-use std::rc::Rc;
-use std::cell::RefCell;
 use rand::Rng;
 use std::collections::{HashSet, HashMap, BinaryHeap};
 use std::cmp::Reverse;
+use std::hash::Hash;
+use super::node::{HNSWNodeRef, HNSWNode, HNSWNodeWrapper};
 
-type HNSWNodeRef = Rc<RefCell<HNSWNode>>; 
 
-struct HNSWNode {
-    vector: Vector,
-    neighbors: HashMap<usize, Vec<HNSWNodeRef>>,
-}
 
-impl HNSWNode {
-    pub fn new(vector: &Vector) -> HNSWNodeRef {
-        let node = Self {
-            vector: vector.clone(),
-            neighbors: HashMap::new(),  
-        };
-        Rc::new(RefCell::new(node))
-
-    }
-    pub fn neighbors(&self, layer_num: usize) -> &Vec<HNSWNodeRef> {
-        &self.neighbors.get(&layer_num).unwrap()
-    }
-
-    pub fn squared_distance(&self, other: HNSWNodeRef) -> f64 {
-        self.vector.clone().squared_distance(&other.borrow().vector)
-    } 
-}
-
-impl Hash for HNSWNode {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.vector.hash(state);
-    }
-}
 
 pub struct HNSW {
     layers: HashMap<usize, Vec<HNSWNodeRef>>, 
@@ -75,10 +47,12 @@ impl HNSW {
         }   
     }
 
-    pub fn search_layer(&self, node_to_insert: HNSWNodeRef, entry_point: HNSWNodeRef, num_nearest_neighbors: usize, layer_num: usize) {
+    fn search_layer(&self, node_to_insert: HNSWNodeRef, entry_point: HNSWNodeRef, num_nearest_neighbors: usize, layer_num: usize) {
+        let entry_point_distance = entry_point.borrow().squared_distance(node_to_insert.clone());
+        let entry_point_wrapper = HNSWNodeWrapper(entry_point);
         let mut visited = HashSet::new();
-        visited.insert(node_to_insert.clone());
-        let entry_point_distance = OrderedFloat(node_to_insert.borrow().squared_distance(entry_point));
+        visited.insert(entry_point_wrapper);
+
         let mut candidates = BinaryHeap::new(); 
         candidates.push(Reverse((entry_point_distance, &entry_point_vector)));
         let mut nearest_neighbors = BinaryHeap::new();
