@@ -40,14 +40,10 @@ pub struct HNSWNode {
 }
 
 impl HNSWNode {
-    pub fn new(vector: Vector, num_layers: usize) -> HNSWNodeWrapper {
-        let mut neighbors = HashMap::new();
-        for i in 0..(num_layers + 1) {
-            neighbors.insert(i, Vec::new());
-        }
+    pub fn new(vector: Vector) -> HNSWNodeWrapper {
         let node = Self {
             vector: vector,
-            neighbors
+            neighbors: HashMap::new()
         };
         HNSWNodeWrapper(Rc::new(RefCell::new(node)))
     }
@@ -61,8 +57,11 @@ impl HNSWNode {
     }
 
     pub fn insert_neighbors(&mut self, layer_num: usize, new_neighbors: Vec<HNSWNodeWrapper>) {
-        let neighbors = self.neighbors.get_mut(&layer_num).unwrap();    
-        neighbors.extend(new_neighbors);
+        if let Some(layer_neighbors) = self.neighbors.get_mut(&layer_num) {
+            layer_neighbors.extend(new_neighbors);
+        } else {
+            self.neighbors.insert(layer_num, new_neighbors);
+        }   
     }
 }
 
