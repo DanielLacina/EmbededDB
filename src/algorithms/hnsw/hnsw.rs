@@ -29,6 +29,20 @@ impl HNSW {
         l
     }
 
+    pub fn search(&mut self, vector: Vector, ef: usize) -> Vec<Vector> {
+        let query_node = HNSWNode::new(vector);
+        let mut entry_point = self.entry_point.clone().unwrap();
+
+        for current_layer_num in (1..=self.top_layer_num).rev() {
+            let mut nearest_candidates=
+                self.search_layer(query_node.clone(), entry_point, 1, current_layer_num);
+            entry_point = nearest_candidates.pop_min().unwrap().0;
+        }
+
+        let candidates = self.search_layer(query_node.clone(), entry_point, ef, 0);
+        candidates.into_sorted_iter().map(|(node, _)| node.borrow().vector().clone()).collect()
+    }
+
     pub fn insert(&mut self, vector: Vector, m: usize, m_max: usize, ef_construction: usize) {
         let new_node = HNSWNode::new(vector);
         let new_node_layer = Self::random_layer();
@@ -96,6 +110,7 @@ impl HNSW {
             self.entry_point = Some(new_node);
         }
     }
+
     fn select_neighbors(
         &self,
         query_node: HNSWNodeWrapper,
