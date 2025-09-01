@@ -56,12 +56,16 @@ impl HNSWNode {
         self.vector.squared_distance(&other.borrow().vector)
     }
 
-    pub fn insert_neighbors(&mut self, layer_num: usize, new_neighbors: Vec<HNSWNodeWrapper>) {
-        if let Some(layer_neighbors) = self.neighbors.get_mut(&layer_num) {
-            layer_neighbors.extend(new_neighbors);
-        } else {
-            self.neighbors.insert(layer_num, new_neighbors);
-        }
+    pub fn vector(&self) -> &Vector {
+        &self.vector
+    }
+
+    pub fn set_neighbors(&mut self, layer_num: usize, new_neighbors: Vec<HNSWNodeWrapper>) {
+        self.neighbors.insert(layer_num, new_neighbors);
+    }
+
+    pub fn add_neighbor(&mut self, layer_num: usize, neighbor: HNSWNodeWrapper) {
+        self.neighbors.entry(layer_num).or_default().push(neighbor);
     }
 }
 
