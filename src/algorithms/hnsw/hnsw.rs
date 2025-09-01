@@ -4,9 +4,9 @@ use crate::numeric::ordered_float::OrderedFloat;
 use core::hash;
 use priority_queue::{DoublePriorityQueue, PriorityQueue};
 use rand::Rng;
+use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::{cmp::Reverse, hash::Hash, result};
-use std::cmp;
 
 #[derive(Debug, Clone)]
 pub struct HNSW {
@@ -34,13 +34,16 @@ impl HNSW {
         let mut entry_point = self.entry_point.clone().unwrap();
 
         for current_layer_num in (1..=self.top_layer_num).rev() {
-            let mut nearest_candidates=
+            let mut nearest_candidates =
                 self.search_layer(query_node.clone(), entry_point, 1, current_layer_num);
             entry_point = nearest_candidates.pop_min().unwrap().0;
         }
 
         let candidates = self.search_layer(query_node.clone(), entry_point, ef, 0);
-        candidates.into_sorted_iter().map(|(node, _)| node.borrow().vector().clone()).collect()
+        candidates
+            .into_sorted_iter()
+            .map(|(node, _)| node.borrow().vector().clone())
+            .collect()
     }
 
     pub fn insert(&mut self, vector: Vector, m: usize, m_max: usize, ef_construction: usize) {
@@ -223,5 +226,51 @@ impl HNSW {
         }
 
         nearest_neighbors
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test] 
+    fn test_hnsw_insert() {
+        let mut hnsw = HNSW::new();
+        let vectors = vec![
+            Vector::new(vec![0.0, 0.0]),
+            Vector::new(vec![1.0, 1.0]),
+            Vector::new(vec![2.0, 2.0]),
+            Vector::new(vec![3.0, 3.0]),
+            Vector::new(vec![4.0, 4.0]),
+        ];
+
+        for vector in &vectors {
+            hnsw.insert(vector.clone(), 2, 4, 3);
+        }
+
+        assert_eq!(hnsw.top_layer_num >= 0, true);
+        assert!(hnsw.entry_point.is_some());
+    }
+
+    #[test] 
+    fn test_hnsw_search() {
+        let mut hnsw = HNSW::new();
+        let vectors = vec![
+            Vector::new(vec![0.0, 0.0]),
+            Vector::new(vec![1.0, 1.0]),
+            Vector::new(vec![2.0, 2.0]),
+            Vector::new(vec![3.0, 3.0]),
+            Vector::new(vec![4.0, 4.0]),
+        ];
+
+        for vector in &vectors {
+            hnsw.insert(vector.clone(), 2, 4, 3);
+        }
+
+        let query = Vector::new(vec![0.5, 0.5]);
+        let results = hnsw.search(query, 2);
+        println!("{:?}", results);
+
+        assert_eq!(results.len(), 2);
     }
 }

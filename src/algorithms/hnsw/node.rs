@@ -48,9 +48,11 @@ impl HNSWNode {
         HNSWNodeWrapper(Rc::new(RefCell::new(node)))
     }
 
-    pub fn neighbors(&self, layer_num: usize) -> &Vec<HNSWNodeWrapper> {
-        self.neighbors.get(&layer_num).unwrap()
-    }
+    pub fn neighbors(&self, layer_num: usize) -> &[HNSWNodeWrapper] {
+        self.neighbors
+            .get(&layer_num)
+            .map_or(&[], |v| v.as_slice())
+    } 
 
     pub fn squared_distance(&self, other: HNSWNodeWrapper) -> f64 {
         self.vector.squared_distance(&other.borrow().vector)
