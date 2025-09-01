@@ -1,4 +1,4 @@
-
+#[derive(Debug, Clone, Copy)]
 pub struct OrderedFloat(pub f64);
 
 impl PartialEq for OrderedFloat {

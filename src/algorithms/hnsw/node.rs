@@ -1,20 +1,27 @@
 use crate::linalg::vector::Vector;
+use std::cell::{Ref, RefCell, RefMut};
+use std::collections::HashMap;
 use std::hash::Hash;
 use std::rc::Rc;
-use std::cell::RefCell;
-use std::collections::{HashMap};
 
+pub type HNSWNodeRef = Rc<RefCell<HNSWNode>>;
+
+#[derive(Debug, Clone)]
 pub struct HNSWNodeWrapper(pub HNSWNodeRef);
+
+impl HNSWNodeWrapper {
+    pub fn borrow(&self) -> Ref<HNSWNode> {
+        self.0.borrow()
+    }
+
+    pub fn borrow_mut(&self) -> RefMut<HNSWNode> {
+        self.0.borrow_mut()
+    }
+}
 
 impl Hash for HNSWNodeWrapper {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         Rc::as_ptr(&self.0).hash(state);
-    }
-}
-
-impl Clone for HNSWNodeWrapper {
-    fn clone(&self) -> Self {
-        HNSWNodeWrapper(self.0.clone())
     }
 }
 
@@ -24,32 +31,30 @@ impl PartialEq for HNSWNodeWrapper {
     }
 }
 
-impl Eq for HNSWNodeWrapper {
-}
+impl Eq for HNSWNodeWrapper {}
 
-pub type HNSWNodeRef = Rc<RefCell<HNSWNode>>; 
-
+#[derive(Debug, Clone)]
 pub struct HNSWNode {
     vector: Vector,
-    neighbors: HashMap<usize, Vec<HNSWNodeRef>>,
+    neighbors: HashMap<usize, Vec<HNSWNodeWrapper>>,
 }
 
 impl HNSWNode {
-    pub fn new(vector: &Vector) -> HNSWNodeRef {
+    pub fn new(vector: Vector) -> HNSWNodeWrapper {
         let node = Self {
-            vector: vector.clone(),
-            neighbors: HashMap::new(),  
+            vector: vector,
+            neighbors: HashMap::new(),
         };
-        Rc::new(RefCell::new(node))
-
-    }
-    pub fn neighbors(&self, layer_num: usize) -> &Vec<HNSWNodeRef> {
-        &self.neighbors.get(&layer_num).unwrap()
+        HNSWNodeWrapper(Rc::new(RefCell::new(node)))
     }
 
-    pub fn squared_distance(&self, other: HNSWNodeRef) -> f64 {
-        self.vector.clone().squared_distance(&other.borrow().vector)
-    } 
+    pub fn neighbors(&self, layer_num: usize) -> &Vec<HNSWNodeWrapper> {
+        self.neighbors.get(&layer_num).unwrap()
+    }
+
+    pub fn squared_distance(&self, other: HNSWNodeWrapper) -> f64 {
+        self.vector.squared_distance(&other.borrow().vector)
+    }
 }
 
 impl Hash for HNSWNode {

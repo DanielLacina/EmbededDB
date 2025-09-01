@@ -1,5 +1,5 @@
-use std::iter::zip;
 use std::hash::{Hash, Hasher};
+use std::iter::zip;
 
 #[derive(Clone, Debug)]
 pub struct Vector {
@@ -15,10 +15,11 @@ impl Vector {
         &self.data
     }
 
-    pub fn squared_distance(self, other: &Self) -> f64 {
-        zip(self.data(), other.data()).map(|(cur, other)| (cur - other).powi(2)).sum::<f64>()
+    pub fn squared_distance(&self, other: &Self) -> f64 {
+        zip(self.data(), other.data())
+            .map(|(cur, other)| (cur - other).powi(2))
+            .sum::<f64>()
     }
-
 }
 
 impl PartialEq for Vector {
