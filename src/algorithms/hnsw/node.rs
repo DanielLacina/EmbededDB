@@ -43,7 +43,7 @@ impl HNSWNode {
     pub fn new(vector: Vector) -> HNSWNodeWrapper {
         let node = Self {
             vector: vector,
-            neighbors: HashMap::new()
+            neighbors: HashMap::new(),
         };
         HNSWNodeWrapper(Rc::new(RefCell::new(node)))
     }
@@ -61,7 +61,7 @@ impl HNSWNode {
             layer_neighbors.extend(new_neighbors);
         } else {
             self.neighbors.insert(layer_num, new_neighbors);
-        }   
+        }
     }
 }
 
