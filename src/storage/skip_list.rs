@@ -96,30 +96,33 @@ impl SkipList {
         element_ref.borrow_mut().entry.tombstone = false;
     }
 
-    fn insert(&mut self, path: Vec<ElementRef>, key: usize, value: Vec<u8>) {
+    fn insert(&mut self, mut path: Vec<ElementRef>, key: usize, value: Vec<u8>) {
+        let new_level = self.random_level();
+        if new_level > self.level {
+            for i in (self.level + 1)..=new_level {
+                path.push(self.head.clone());
+            }
+            self.level = new_level;
+        }
+
         let new_element = Rc::new(RefCell::new(Element {
             entry: Entry::new(key, value),
             next: Vec::new(),
         }));
-        let level_num = self.random_level();
-        for lc in 0..((level_num).min(self.level) + 1) {
-            let prev_element_ref = path[lc].clone();
-            let prev_element_next = prev_element_ref.borrow().next.get(lc).cloned();
-            if let Some(prev_element_next_ref) = prev_element_next {
-                new_element.borrow_mut().next.push(prev_element_next_ref);
+
+        for lc in 0..=new_level {
+            let prev_node_ref = path[lc].clone();
+
+            let next_node = prev_node_ref.borrow().next.get(lc).cloned();
+            if let Some(next_node_ref) = next_node {
+                new_element.borrow_mut().next.push(next_node_ref);
             }
-            let prev_element_next_len = prev_element_ref.borrow().next.len();
-            if lc >= prev_element_next_len {
-                prev_element_ref.borrow_mut().next.push(new_element.clone());
+
+            if prev_node_ref.borrow().next.len() <= lc {
+                prev_node_ref.borrow_mut().next.push(new_element.clone());
             } else {
-                prev_element_ref.borrow_mut().next[lc] = new_element.clone();
+                prev_node_ref.borrow_mut().next[lc] = new_element.clone();
             }
-        }
-        if level_num > self.level {
-            for _ in self.level + 1..=level_num {
-                self.head.borrow_mut().next.push(new_element.clone());
-            }
-            self.level = level_num;
         }
         self.size += 1;
     }
