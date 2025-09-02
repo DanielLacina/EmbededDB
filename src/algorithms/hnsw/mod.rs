@@ -29,8 +29,11 @@ impl HNSW {
         (-f64::ln(random_num) * ml as f64) as usize
     }
 
-    pub fn search(&mut self, vector: Vector, k: usize, ef: usize) -> Vec<Vector> {
+    pub fn search(&self, vector: Vector, k: usize, ef: usize) -> Vec<Vector> {
         let query_node = HNSWNode::new_wrapped(vector);
+        if self.entry_point.is_none() {
+            return Vec::new();
+        }
         let mut entry_point = self.entry_point.clone().unwrap();
 
         for current_layer_num in (1..=self.top_layer_num).rev() {
@@ -245,44 +248,96 @@ impl HNSW {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_hnsw_insert() {
+    fn setup_hnsw() -> (HNSW, Vec<Vector>) {
         let mut hnsw = HNSW::new();
         let vectors = vec![
             Vector::new(vec![0.0, 0.0]),
             Vector::new(vec![1.0, 1.0]),
-            Vector::new(vec![2.0, 2.0]),
-            Vector::new(vec![3.0, 3.0]),
-            Vector::new(vec![4.0, 4.0]),
+            Vector::new(vec![8.0, 8.0]),
+            Vector::new(vec![10.0, 10.0]),
+            Vector::new(vec![12.0, 12.0]),
         ];
 
         for vector in &vectors {
-            hnsw.insert(vector.clone(), 2, 4, 3, 1);
+            hnsw.insert(vector.clone(), 16, 200, 4, 1);
         }
-
-        assert_eq!(hnsw.top_layer_num >= 0, true);
-        assert!(hnsw.entry_point.is_some());
+        (hnsw, vectors)
     }
 
     #[test]
-    fn test_hnsw_search() {
-        let mut hnsw = HNSW::new();
-        let vectors = vec![
-            Vector::new(vec![0.0, 0.0]),
-            Vector::new(vec![1.0, 1.0]),
-            Vector::new(vec![2.0, 2.0]),
-            Vector::new(vec![3.0, 3.0]),
-            Vector::new(vec![4.0, 4.0]),
-        ];
+    fn test_insert_creates_entry_point() {
+        let (hnsw, _) = setup_hnsw();
 
-        for vector in &vectors {
-            hnsw.insert(vector.clone(), 2, 4, 3, 1);
-        }
+        assert!(
+            hnsw.entry_point.is_some(),
+            "HNSW should have an entry point after insertion."
+        );
+    }
 
+    #[test]
+    fn test_search_returns_correct_neighbors() {
+        let (hnsw, _) = setup_hnsw();
         let query = Vector::new(vec![0.5, 0.5]);
-        let results = hnsw.search(query, 2, 4);
-        println!("{:?}", results);
 
-        assert_eq!(results.len(), 2);
+        let k = 2;
+        let results = hnsw.search(query, k, 100);
+
+        assert_eq!(results.len(), k, "Search should return k results.");
+
+        let expected_neighbor_1 = Vector::new(vec![0.0, 0.0]);
+        let expected_neighbor_2 = Vector::new(vec![1.0, 1.0]);
+
+        assert!(
+            results.contains(&expected_neighbor_1),
+            "Results should contain the nearest neighbor."
+        );
+        assert!(
+            results.contains(&expected_neighbor_2),
+            "Results should contain the second nearest neighbor."
+        );
+    }
+
+    #[test]
+    fn test_search_for_exact_match() {
+        let (hnsw, _) = setup_hnsw();
+
+        let query = Vector::new(vec![8.0, 8.0]);
+
+        let k = 1;
+        let results = hnsw.search(query.clone(), k, 100);
+
+        assert_eq!(results.len(), k);
+
+        assert_eq!(
+            results[0], query,
+            "The first result should be the exact match."
+        );
+    }
+
+    #[test]
+    fn test_search_on_empty_index() {
+        let hnsw = HNSW::new();
+        let query = Vector::new(vec![1.0, 1.0]);
+        let results = hnsw.search(query, 5, 100);
+
+        assert!(
+            results.is_empty(),
+            "Search on an empty HNSW should return no results."
+        );
+    }
+
+    #[test]
+    fn test_search_with_k_larger_than_dataset() {
+        let (hnsw, vectors) = setup_hnsw();
+        let query = Vector::new(vec![0.5, 0.5]);
+
+        let k = vectors.len() + 5;
+        let results = hnsw.search(query, k, 100);
+
+        assert_eq!(
+            results.len(),
+            vectors.len(),
+            "Should return all elements if k > dataset size."
+        );
     }
 }

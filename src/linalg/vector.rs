@@ -16,6 +16,9 @@ impl Vector {
     }
 
     pub fn squared_distance(&self, other: &Self) -> f64 {
+        if self.data.len() != other.data.len() {
+            panic!("Vectors must be of the same length to compute squared distance");
+        }
         zip(self.data(), other.data())
             .map(|(cur, other)| (cur - other).powi(2))
             .sum::<f64>()
