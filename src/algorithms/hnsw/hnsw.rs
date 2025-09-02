@@ -22,14 +22,14 @@ impl HNSW {
         }
     }
 
-    fn random_layer() -> usize {
+    fn random_layer(ml: usize) -> usize {
         let mut rng = rand::thread_rng();
         let random_num = rng.r#gen();
-        let l = -f64::ln(random_num) as usize;
+        let l = (-f64::ln(random_num) * ml as f64) as usize;
         l
     }
 
-    pub fn search(&mut self, vector: Vector, ef: usize) -> Vec<Vector> {
+    pub fn search(&mut self, vector: Vector, k: usize, ef: usize) -> Vec<Vector> {
         let query_node = HNSWNode::new(vector);
         let mut entry_point = self.entry_point.clone().unwrap();
 
@@ -40,15 +40,17 @@ impl HNSW {
         }
 
         let candidates = self.search_layer(query_node.clone(), entry_point, ef, 0);
-        candidates
+        let mut result = candidates
             .into_sorted_iter()
             .map(|(node, _)| node.borrow().vector().clone())
-            .collect()
+            .collect::<Vec<_>>();
+        result.truncate(k);
+        result
     }
 
-    pub fn insert(&mut self, vector: Vector, m: usize, m_max: usize, ef_construction: usize) {
+    pub fn insert(&mut self, vector: Vector, m: usize, m_max: usize, ef_construction: usize, ml: usize) {
         let new_node = HNSWNode::new(vector);
-        let new_node_layer = Self::random_layer();
+        let new_node_layer = Self::random_layer(ml);
 
         if self.entry_point.is_none() {
             self.entry_point = Some(new_node);
@@ -245,7 +247,7 @@ mod tests {
         ];
 
         for vector in &vectors {
-            hnsw.insert(vector.clone(), 2, 4, 3);
+            hnsw.insert(vector.clone(), 2, 4, 3, 1);
         }
 
         assert_eq!(hnsw.top_layer_num >= 0, true);
@@ -264,11 +266,11 @@ mod tests {
         ];
 
         for vector in &vectors {
-            hnsw.insert(vector.clone(), 2, 4, 3);
+            hnsw.insert(vector.clone(), 2, 4, 3, 1);
         }
 
         let query = Vector::new(vec![0.5, 0.5]);
-        let results = hnsw.search(query, 2);
+        let results = hnsw.search(query, 2, 4);
         println!("{:?}", results);
 
         assert_eq!(results.len(), 2);
