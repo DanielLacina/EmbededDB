@@ -1,4 +1,4 @@
-use std::cell::{RefCell};
+use std::cell::RefCell;
 use std::rc::Rc;
 
 type ElementRef = Rc<RefCell<Element>>;
@@ -135,7 +135,6 @@ impl SkipList {
         None
     }
 
-    // returns closest element and path of closest elements ordered from bottom to top
     fn search(&self, key: &usize) -> (ElementRef, Vec<ElementRef>) {
         let mut path = vec![self.head.clone(); self.level + 1];
         let mut current = self.head.clone();
@@ -218,7 +217,6 @@ mod tests {
         let mut list = SkipList::new(16, 0.5);
         list.update_or_insert(&25, vec![1, 1]);
 
-        // Now update it
         let new_value = vec![2, 2];
         list.update_or_insert(&25, new_value.clone());
 
@@ -232,7 +230,6 @@ mod tests {
         list.update_or_insert(&10, vec![]);
         list.update_or_insert(&30, vec![]);
 
-        // Search for a key that falls between two existing keys
         let (predecessor, _) = list.search(&20);
         assert_eq!(
             predecessor.borrow().entry.key,
@@ -240,7 +237,6 @@ mod tests {
             "Predecessor for key 20 should be 10"
         );
 
-        // Search for a key that is larger than any in the list
         let (predecessor_large, _) = list.search(&100);
         assert_eq!(
             predecessor_large.borrow().entry.key,
@@ -290,7 +286,6 @@ mod tests {
         assert_eq!(list.get(&50), None);
         assert_eq!(list.size, 0);
 
-        // Re-insert with a new value
         list.update_or_insert(&50, vec![5, 5]);
         assert_eq!(list.size, 1);
         let entry = list.get(&50).unwrap();
