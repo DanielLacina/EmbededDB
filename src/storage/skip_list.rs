@@ -1,4 +1,4 @@
-use std::cell::{Ref, RefCell};
+use std::cell::{RefCell};
 use std::rc::Rc;
 
 type ElementRef = Rc<RefCell<Element>>;
@@ -60,15 +60,17 @@ impl SkipList {
         level
     }
 
-    pub fn delete(&mut self, key: &usize) {
+    pub fn delete(&mut self, key: &usize) -> bool {
         let (prev_element_ref, _) = self.search(key);
         let prev_element_next = prev_element_ref.borrow().next.get(0).cloned();
         if let Some(element_ref) = prev_element_next {
             if element_ref.borrow().entry.key == *key {
                 element_ref.borrow_mut().entry.tombstone = true;
+                self.size -= 1;
+                return true;
             }
         }
-        self.size -= 1;
+        false
     }
 
     pub fn update_or_insert(&mut self, key: &usize, value: Vec<u8>) {
@@ -85,8 +87,12 @@ impl SkipList {
         }
     }
 
-    fn update(&self, element_ref: ElementRef, value: Vec<u8>) {
+    fn update(&mut self, element_ref: ElementRef, value: Vec<u8>) {
         element_ref.borrow_mut().entry.value = value;
+        let is_deleted = element_ref.borrow().entry.tombstone;
+        if is_deleted {
+            self.size += 1;
+        }
         element_ref.borrow_mut().entry.tombstone = false;
     }
 
@@ -102,8 +108,8 @@ impl SkipList {
             if let Some(prev_element_next_ref) = prev_element_next {
                 new_element.borrow_mut().next.push(prev_element_next_ref);
             }
-            let prev_element_next_len = prev_element_ref.borrow().next.len(); 
-            if lc >= prev_element_next_len { 
+            let prev_element_next_len = prev_element_ref.borrow().next.len();
+            if lc >= prev_element_next_len {
                 prev_element_ref.borrow_mut().next.push(new_element.clone());
             } else {
                 prev_element_ref.borrow_mut().next[lc] = new_element.clone();
@@ -112,7 +118,7 @@ impl SkipList {
         if level_num > self.level {
             for _ in self.level + 1..=level_num {
                 self.head.borrow_mut().next.push(new_element.clone());
-            } 
+            }
             self.level = level_num;
         }
         self.size += 1;
@@ -129,7 +135,7 @@ impl SkipList {
         None
     }
 
-    // returns closest element and path of closest elements ordered from bottom to top 
+    // returns closest element and path of closest elements ordered from bottom to top
     fn search(&self, key: &usize) -> (ElementRef, Vec<ElementRef>) {
         let mut path = vec![self.head.clone(); self.level + 1];
         let mut current = self.head.clone();
@@ -166,7 +172,7 @@ mod tests {
         let key = 10;
         let value = vec![1, 2, 3];
         list.update_or_insert(&key, value.clone());
-        
+
         assert_eq!(list.size, 1);
         assert_eq!(list.get(&key).map(|e| e.value), Some(value));
     }
@@ -176,14 +182,22 @@ mod tests {
         let mut list = SkipList::new(16, 0.5);
         list.update_or_insert(&10, vec![1]);
         list.update_or_insert(&30, vec![3]);
-        
-        assert_eq!(list.get(&20), None, "Should return None for a key that doesn't exist");
+
+        assert_eq!(
+            list.get(&20),
+            None,
+            "Should return None for a key that doesn't exist"
+        );
     }
-    
+
     #[test]
     fn test_get_from_empty_list() {
         let list = SkipList::new(16, 0.5);
-        assert_eq!(list.get(&100), None, "Should not panic and should return None from an empty list");
+        assert_eq!(
+            list.get(&100),
+            None,
+            "Should not panic and should return None from an empty list"
+        );
     }
 
     #[test]
@@ -203,7 +217,7 @@ mod tests {
     fn test_update_existing_key() {
         let mut list = SkipList::new(16, 0.5);
         list.update_or_insert(&25, vec![1, 1]);
-        
+
         // Now update it
         let new_value = vec![2, 2];
         list.update_or_insert(&25, new_value.clone());
@@ -220,10 +234,70 @@ mod tests {
 
         // Search for a key that falls between two existing keys
         let (predecessor, _) = list.search(&20);
-        assert_eq!(predecessor.borrow().entry.key, 10, "Predecessor for key 20 should be 10");
+        assert_eq!(
+            predecessor.borrow().entry.key,
+            10,
+            "Predecessor for key 20 should be 10"
+        );
 
         // Search for a key that is larger than any in the list
         let (predecessor_large, _) = list.search(&100);
-        assert_eq!(predecessor_large.borrow().entry.key, 30, "Predecessor for key 100 should be 30");
+        assert_eq!(
+            predecessor_large.borrow().entry.key,
+            30,
+            "Predecessor for key 100 should be 30"
+        );
+    }
+
+    #[test]
+    fn test_delete_existing_key() {
+        let mut list = SkipList::new(16, 0.5);
+        list.update_or_insert(&40, vec![4]);
+        assert_eq!(list.size, 1);
+
+        assert!(
+            list.delete(&40),
+            "Delete should return true for an existing key"
+        );
+        assert_eq!(list.size, 0, "Size should decrease after deletion");
+        assert_eq!(
+            list.get(&40),
+            None,
+            "Getting a deleted key should return None"
+        );
+    }
+
+    #[test]
+    fn test_delete_non_existent_key() {
+        let mut list = SkipList::new(16, 0.5);
+        list.update_or_insert(&40, vec![4]);
+
+        assert!(
+            !list.delete(&50),
+            "Delete should return false for a non-existent key"
+        );
+        assert_eq!(
+            list.size, 1,
+            "Size should not change when deleting a non-existent key"
+        );
+    }
+
+    #[test]
+    fn test_reinserting_deleted_key() {
+        let mut list = SkipList::new(16, 0.5);
+        list.update_or_insert(&50, vec![5]);
+        list.delete(&50);
+        assert_eq!(list.get(&50), None);
+        assert_eq!(list.size, 0);
+
+        // Re-insert with a new value
+        list.update_or_insert(&50, vec![5, 5]);
+        assert_eq!(list.size, 1);
+        let entry = list.get(&50).unwrap();
+        assert_eq!(entry.value, vec![5, 5]);
+        assert!(
+            !entry.tombstone,
+            "Re-inserted entry should not be a tombstone"
+        );
     }
 }
