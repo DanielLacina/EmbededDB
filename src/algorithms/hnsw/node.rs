@@ -40,19 +40,17 @@ pub struct HNSWNode {
 }
 
 impl HNSWNode {
-    pub fn new(vector: Vector) -> HNSWNodeWrapper {
+    pub fn new_wrapped(vector: Vector) -> HNSWNodeWrapper {
         let node = Self {
-            vector: vector,
+            vector,
             neighbors: HashMap::new(),
         };
         HNSWNodeWrapper(Rc::new(RefCell::new(node)))
     }
 
     pub fn neighbors(&self, layer_num: usize) -> &[HNSWNodeWrapper] {
-        self.neighbors
-            .get(&layer_num)
-            .map_or(&[], |v| v.as_slice())
-    } 
+        self.neighbors.get(&layer_num).map_or(&[], |v| v.as_slice())
+    }
 
     pub fn squared_distance(&self, other: HNSWNodeWrapper) -> f64 {
         self.vector.squared_distance(&other.borrow().vector)

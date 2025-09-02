@@ -1,0 +1,50 @@
+
+name: Rust CI/CD Pipeline
+
+
+on:
+  
+  push:
+    branches: [ "main" ]
+  
+  pull_request:
+    branches: [ "main" ]
+
+
+jobs:
+  
+  format:
+    name: Check Formatting
+    runs-on: ubuntu-latest
+    steps:
+      
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      
+      - name: Run cargo fmt
+        run: cargo fmt -- --check
+
+  
+  clippy:
+    name: Run Clippy Linter
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      
+      - name: Run cargo clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      
+      - name: Run cargo test
+        run: cargo test --verbose
