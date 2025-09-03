@@ -97,15 +97,15 @@ impl MemTable {
 
         if let Some(element_ref) = prev_element_next {
             if element_ref.borrow().entry.key == key {
-                self.update(element_ref, value);
+                self.update(element_ref, value, timestamp);
                 return;
             }
-        }
+        } 
 
         self.insert(path, key, value, timestamp);
     }
 
-    fn update(&mut self, element_ref: MemTableElementRef, value: Option<&[u8]>) {
+    fn update(&mut self, element_ref: MemTableElementRef, value: Option<&[u8]>, timestamp: u128) {
         let mut element_mut = element_ref.borrow_mut();
         let prev_value_len = element_mut.entry.value.as_ref().map_or(0, |v| v.len());
         let new_value_len = value.as_ref().map_or(0, |v| v.len());
@@ -113,6 +113,7 @@ impl MemTable {
         self.size = self.size - prev_value_len + new_value_len;
 
         element_mut.entry.value = value.map(|v| v.to_vec());
+        element_mut.entry.timestamp = timestamp;
 
         element_mut.entry.deleted = false;
     }
@@ -288,11 +289,6 @@ mod tests {
 
         let entry = table.get(&key).unwrap();
         assert_eq!(entry.value.as_deref(), Some(new_value.as_slice()));
-
-        assert_eq!(
-            entry.timestamp, 5555,
-            "Timestamp should not change on update"
-        );
     }
 
     #[test]
