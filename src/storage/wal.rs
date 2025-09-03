@@ -184,28 +184,23 @@ mod tests {
 
     #[test]
     fn test_wal_set_and_read_single_entry() -> io::Result<()> {
-        
         let dir = tempdir()?;
         let mut wal = WAL::new(dir.path())?;
 
-        
         let key = b"hello";
         let value = b"world";
         let timestamp = 12345;
         wal.set(key, value, timestamp)?;
-        wal.flush()?; 
+        wal.flush()?;
 
-        
         let mut iter = WALIterator::new(wal.path.clone())?;
         let entry = iter.next().expect("Should be able to read one entry");
 
-        
         assert_eq!(entry.key, key);
         assert_eq!(entry.value.unwrap(), value);
         assert_eq!(entry.timestamp, timestamp);
         assert!(!entry.deleted);
-        
-        
+
         assert!(iter.next().is_none());
 
         Ok(())
@@ -232,33 +227,28 @@ mod tests {
 
         Ok(())
     }
-    
+
     #[test]
     fn test_wal_mixed_operations() -> io::Result<()> {
         let dir = tempdir()?;
         let mut wal = WAL::new(dir.path())?;
 
-        
         wal.set(b"key1", b"value1", 100)?;
         wal.set(b"key2", b"value2", 101)?;
         wal.delete(b"key1", 102)?;
         wal.flush()?;
 
-        
         let entries: Vec<WALEntry> = wal.into_iter().collect();
 
         assert_eq!(entries.len(), 3);
 
-        
         assert_eq!(entries[0].key, b"key1");
         assert_eq!(entries[0].value.as_deref(), Some(&b"value1"[..]));
         assert_eq!(entries[0].timestamp, 100);
 
-        
         assert_eq!(entries[1].key, b"key2");
         assert_eq!(entries[1].value.as_deref(), Some(&b"value2"[..]));
 
-        
         assert_eq!(entries[2].key, b"key1");
         assert!(entries[2].deleted);
         assert_eq!(entries[2].timestamp, 102);
@@ -269,8 +259,7 @@ mod tests {
     #[test]
     fn test_load_from_dir_compaction() -> io::Result<()> {
         let dir = tempdir()?;
-        
-        
+
         let mut wal1 = WAL::from_path(&dir.path().join("1000.wal"))?;
         wal1.set(b"key1", b"old_value", 1000)?;
         wal1.set(b"key2", b"value2", 1001)?;
@@ -281,34 +270,26 @@ mod tests {
         wal2.delete(b"key2", 2001)?;
         wal2.flush()?;
 
-        
         assert_eq!(files_with_ext(dir.path(), "wal").len(), 2);
 
-        
         let (new_wal, mem_table) = load_from_dir(dir.path())?;
 
-        
-        
         let entry = mem_table.get(b"key1").unwrap();
         let val1 = entry.value;
         let ts1 = entry.timestamp;
         assert_eq!(val1.as_deref(), Some(&b"new_value"[..]));
         assert_eq!(ts1, 2000);
 
-        
         let entry = mem_table.get(b"key2");
         assert!(entry.is_none());
-        
-        
-        
+
         let remaining_files = files_with_ext(dir.path(), "wal");
         assert_eq!(remaining_files.len(), 1);
-        
+
         assert_eq!(remaining_files[0], new_wal.path);
 
-        
         let new_entries: Vec<WALEntry> = new_wal.into_iter().collect();
-        assert_eq!(new_entries.len(), 4); 
+        assert_eq!(new_entries.len(), 4);
 
         Ok(())
     }
