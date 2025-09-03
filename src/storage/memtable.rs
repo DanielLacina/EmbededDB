@@ -97,7 +97,7 @@ impl MemTable {
 
         if let Some(element_ref) = prev_element_next {
             if element_ref.borrow().entry.key == key {
-                self.update(element_ref, value);
+                self.update(element_ref, value, timestamp);
                 return;
             }
         }
@@ -105,7 +105,7 @@ impl MemTable {
         self.insert(path, key, value, timestamp);
     }
 
-    fn update(&mut self, element_ref: MemTableElementRef, value: Option<&[u8]>) {
+    fn update(&mut self, element_ref: MemTableElementRef, value: Option<&[u8]>, timestamp: u128) {
         let mut element_mut = element_ref.borrow_mut();
         let prev_value_len = element_mut.entry.value.as_ref().map_or(0, |v| v.len());
         let new_value_len = value.as_ref().map_or(0, |v| v.len());
@@ -113,6 +113,7 @@ impl MemTable {
         self.size = self.size - prev_value_len + new_value_len;
 
         element_mut.entry.value = value.map(|v| v.to_vec());
+        element_mut.entry.timestamp = timestamp;
 
         element_mut.entry.deleted = false;
     }
@@ -157,6 +158,24 @@ impl MemTable {
         new_element
     }
 
+    pub fn get_all(&self) -> Vec<MemTableEntry> {
+        let mut entries = Vec::new();
+
+        let mut current_option = self.head.borrow().next.get(0).cloned();
+
+        while let Some(node_ref) = current_option {
+            let node = node_ref.borrow();
+
+            if !node.entry.deleted {
+                entries.push(node.entry.clone());
+            }
+
+            current_option = node.next.get(0).cloned();
+        }
+
+        entries
+    }
+
     pub fn get(&self, key: &[u8]) -> Option<MemTableEntry> {
         let (prev_element_ref, _) = self.search(key);
         if let Some(element_ref) = prev_element_ref.borrow().next.get(0) {
@@ -193,7 +212,7 @@ impl MemTable {
             }
         }
         (current, path)
-    } 
+    }
 }
 
 #[cfg(test)]
@@ -288,11 +307,6 @@ mod tests {
 
         let entry = table.get(&key).unwrap();
         assert_eq!(entry.value.as_deref(), Some(new_value.as_slice()));
-
-        assert_eq!(
-            entry.timestamp, 5555,
-            "Timestamp should not change on update"
-        );
     }
 
     #[test]
@@ -332,8 +346,7 @@ mod tests {
             "Size should increase by deleted entry size"
         );
 
-        assert_eq!(table.get(&non_existent_key), None 
-        );
+        assert_eq!(table.get(&non_existent_key), None);
     }
 
     #[test]
@@ -357,5 +370,56 @@ mod tests {
         let entry = table.get(&key).unwrap();
         assert_eq!(entry.value.as_deref(), Some(new_value.as_slice()));
         assert!(!entry.deleted, "Entry should no longer be a deleted");
+    }
+
+    #[test]
+    fn test_get_all_returns_non_deleted_entries_in_order() {
+        let mut memtable = MemTable::new(16, 0.5);
+
+        memtable.set(b"banana", Some(b"value2"), 102);
+        memtable.set(b"apple", Some(b"value1"), 101);
+        memtable.set(b"cherry", Some(b"value3"), 103);
+
+        memtable.delete(b"banana", 104);
+
+        let result_entries = memtable.get_all();
+
+        let expected_entries = vec![
+            MemTableEntry {
+                key: b"apple".to_vec(),
+                value: Some(b"value1".to_vec()),
+                timestamp: 101,
+                deleted: false,
+            },
+            MemTableEntry {
+                key: b"cherry".to_vec(),
+                value: Some(b"value3".to_vec()),
+                timestamp: 103,
+                deleted: false,
+            },
+        ];
+
+        assert_eq!(
+            result_entries.len(),
+            2,
+            "The result should contain exactly two non-deleted entries."
+        );
+
+        assert_eq!(
+            result_entries, expected_entries,
+            "The returned entries did not match the expected entries."
+        );
+    }
+
+    #[test]
+    fn test_get_all_on_empty_memtable() {
+        let memtable = MemTable::new(16, 0.5);
+
+        let result_entries = memtable.get_all();
+
+        assert!(
+            result_entries.is_empty(),
+            "get_all on an empty table should return an empty vector."
+        );
     }
 }

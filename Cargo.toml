@@ -3,6 +3,10 @@ name = "embeded_db"
 version = "0.1.0"
 edition = "2024"
 
+[dev-dependencies]
+tempfile = "3.21.0"
+
+
 [dependencies]
 priority-queue = "2.5.0"
 rand = "0.8"
