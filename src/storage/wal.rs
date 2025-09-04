@@ -1,4 +1,3 @@
-use super::memtable::MemTable;
 use std::{
     fs::{File, OpenOptions, read_dir, remove_file},
     io::{self, BufReader, BufWriter, Read, Write},

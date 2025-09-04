@@ -8,5 +8,6 @@ tempfile = "3.21.0"
 
 
 [dependencies]
+dashmap = "6.1.0"
 priority-queue = "2.5.0"
 rand = "0.8"

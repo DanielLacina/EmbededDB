@@ -1,54 +1,35 @@
-mod node;
+use super::node::{Node, NodeId, LayerNum};
 use crate::linalg::vector::Vector;
 use crate::numeric::ordered_float::OrderedFloat;
-use node::{HNSWNode, HNSWNodeWrapper};
+use crate::storage::memtable::MemTable;
 use priority_queue::{DoublePriorityQueue, PriorityQueue};
 use rand::Rng;
 use std::cmp;
-use std::cmp::Reverse;
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, RwLock};
+
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug, Clone)]
 pub struct HNSW {
-    top_layer_num: usize,
-    entry_point: Option<HNSWNodeWrapper>,
+    top_layer_num: AtomicUsize,
+    entry_id: RwLock<Option<usize>>,
+    mem_table: Arc<MemTable>,
 }
 
 impl HNSW {
     pub fn new() -> Self {
         Self {
-            entry_point: None,
-            top_layer_num: 0,
+            entry_id: RwLock::new(None),
+            top_layer_num: AtomicUsize::new(0),
+            mem_table: Arc::new(MemTable::new()),
         }
     }
 
     fn random_layer(ml: usize) -> usize {
         let mut rng = rand::thread_rng();
-        let random_num = rng.r#gen();
-        (-f64::ln(random_num) * ml as f64) as usize
-    }
-
-    pub fn search(&self, vector: Vector, k: usize, ef: usize) -> Vec<Vector> {
-        let query_node = HNSWNode::new_wrapped(vector);
-        if self.entry_point.is_none() {
-            return Vec::new();
-        }
-        let mut entry_point = self.entry_point.clone().unwrap();
-
-        for current_layer_num in (1..=self.top_layer_num).rev() {
-            let mut nearest_candidates =
-                self.search_layer(query_node.clone(), entry_point, 1, current_layer_num);
-            entry_point = nearest_candidates.pop_min().unwrap().0;
-        }
-
-        let candidates = self.search_layer(query_node.clone(), entry_point, ef, 0);
-        let mut result = candidates
-            .into_sorted_iter()
-            .map(|(node, _)| node.borrow().vector().clone())
-            .collect::<Vec<_>>();
-        result.truncate(k);
-        result
+        let random_num: f64 = rng.r#gen();
+        (-random_num.ln() * ml as f64) as usize
     }
 
     pub fn insert(
@@ -59,97 +40,95 @@ impl HNSW {
         ef_construction: usize,
         ml: usize,
     ) {
-        let new_node = HNSWNode::new_wrapped(vector);
+        let new_node_id = self.mem_table.insert(vector);
         let new_node_layer = Self::random_layer(ml);
 
-        if self.entry_point.is_none() {
-            self.entry_point = Some(new_node);
-            self.top_layer_num = new_node_layer;
-            return;
-        }
+        let entry_id = match self.entry_id {
+            Some(id) => id,
+            None => {
+                self.entry_id = Some(new_node_id);
+                self.top_layer_num = new_node_layer;
+                return;
+            }
+        };
 
-        let current_top_layer = self.top_layer_num;
-        let mut entry_point = self.entry_point.clone().unwrap();
+        let mut entry_node = self.mem_table.get(&entry_id).unwrap();
 
-        for current_layer_num in ((new_node_layer + 1)..=current_top_layer).rev() {
+        for current_layer_num in ((new_node_layer + 1)..=self.top_layer_num).rev() {
+            let new_node_vector = &self.mem_table.get(&new_node_id).unwrap().vector();
             let mut nearest_candidate =
-                self.search_layer(new_node.clone(), entry_point, 1, current_layer_num);
-            entry_point = nearest_candidate.pop_min().unwrap().0;
+                self.search_layer(new_node_vector, entry_node, 1, current_layer_num);
+            entry_node = nearest_candidate.pop_min().unwrap().0;
         }
 
-        let insertion_top_layer = cmp::min(self.top_layer_num, new_node_layer);
-        for current_layer_num in (0..=insertion_top_layer).rev() {
+        for current_layer_num in (0..=cmp::min(self.top_layer_num, new_node_layer)).rev() {
+            let new_node_vector = &self.mem_table.get(&new_node_id).unwrap().vector();
+
             let candidates = self.search_layer(
-                new_node.clone(),
-                entry_point.clone(),
+                new_node_vector,
+                entry_node,
                 ef_construction,
                 current_layer_num,
             );
 
             let new_node_neighbors = self.select_neighbors(
-                new_node.clone(),
+                new_node_vector,
                 candidates.clone(),
                 m,
                 current_layer_num,
                 true,
                 true,
             );
+            let new_node_neighbors_ids: Vec<NodeId> =
+                new_node_neighbors.iter().map(|n| n.id()).collect();
 
-            new_node
-                .borrow_mut()
-                .set_neighbors(current_layer_num, new_node_neighbors.clone());
+            self.mem_table
+                .get_mut(&new_node_id)
+                .unwrap()
+                .set_neighbor_ids(current_layer_num, new_node_neighbors_ids.clone());
 
-            for neighbor in &new_node_neighbors {
-                let mut neighbor_mut = neighbor.borrow_mut();
+            for neighbor_id in &new_node_neighbors_ids {
+                let neighbor_mut = self.mem_table.get_mut(neighbor_id).unwrap();
+                let neighbor_connections = neighbor_mut
+                    .neighbor_ids(current_layer_num)
+                    .unwrap_or(&Vec::new());
 
-                if neighbor_mut.neighbors(current_layer_num).len() == m_max {
-                    let updated_neighbors = self.select_neighbors(
-                        neighbor.clone(),
-                        candidates.clone(),
-                        m,
-                        current_layer_num,
-                        true,
-                        true,
-                    );
-                    neighbor_mut.set_neighbors(current_layer_num, updated_neighbors);
+                if neighbor_connections.len() < m_max {
+                    neighbor_mut.add_neighbor(current_layer_num, new_node_id);
                 } else {
-                    neighbor_mut.add_neighbor(current_layer_num, new_node.clone());
                 }
             }
 
-            entry_point = new_node_neighbors[0].clone();
+            entry_node = new_node_neighbors[0];
         }
 
         if new_node_layer > self.top_layer_num {
             self.top_layer_num = new_node_layer;
-            self.entry_point = Some(new_node);
+            self.entry_id = Some(new_node_id);
         }
     }
 
-    fn select_neighbors(
-        &self,
-        query_node: HNSWNodeWrapper,
-        mut candidate_pool: DoublePriorityQueue<HNSWNodeWrapper, OrderedFloat>,
+    fn select_neighbors<'a>(
+        &'a self,
+        query_vector: &Vector,
+        mut candidate_pool: DoublePriorityQueue<&'a Node, OrderedFloat>,
         m: usize,
         layer_num: usize,
         extend_candidates: bool,
         keep_pruned_connections: bool,
-    ) -> Vec<HNSWNodeWrapper> {
+    ) -> Vec<&'a Node> {
         if extend_candidates {
-            let initial_candidates: Vec<HNSWNodeWrapper> = candidate_pool
-                .iter()
-                .map(|(node, _)| node.clone())
-                .collect();
+            let initial_candidates: Vec<&Node> =
+                candidate_pool.iter().map(|(node, _)| *node).collect();
             #[allow(clippy::mutable_key_type)]
-            let mut visited: HashSet<HNSWNodeWrapper> =
-                initial_candidates.iter().cloned().collect();
+            let mut visited: HashSet<&Node> = initial_candidates.iter().cloned().collect();
 
             for candidate in initial_candidates {
-                for neighbor in candidate.borrow().neighbors(layer_num) {
-                    if visited.insert(neighbor.clone()) {
-                        let dist =
-                            OrderedFloat(neighbor.borrow().squared_distance(query_node.clone()));
-                        candidate_pool.push(neighbor.clone(), dist);
+                for neighbor_id in candidate.neighbor_ids(layer_num).unwrap_or(&Vec::new()) {
+                    let neighbor = self.mem_table.get(neighbor_id).unwrap();
+                    if visited.insert(neighbor) {
+                        let dist = OrderedFloat(neighbor.vector().squared_distance(query_vector));
+                        candidate_pool.push(neighbor, dist);
                     }
                 }
             }
@@ -169,7 +148,7 @@ impl HNSW {
             }
 
             let is_diverse_candidate = selected_neighbors.iter().all(|selected| {
-                let dist_to_selected = candidate_node.borrow().squared_distance(selected.clone());
+                let dist_to_selected = candidate_node.vector().squared_distance(selected.vector());
                 dist_to_selected >= candidate_dist.0
             });
 
@@ -193,26 +172,22 @@ impl HNSW {
         selected_neighbors
     }
 
-    fn search_layer(
-        &self,
-        query_node: HNSWNodeWrapper,
-        entry_point: HNSWNodeWrapper,
+    fn search_layer<'a>(
+        &'a self,
+        query_vector: &Vector,
+        entry_node: &'a Node,
         ef: usize,
         layer_num: usize,
-    ) -> DoublePriorityQueue<HNSWNodeWrapper, OrderedFloat> {
+    ) -> DoublePriorityQueue<&'a Node, OrderedFloat> {
         let mut nearest_neighbors = DoublePriorityQueue::new();
-
         let mut candidate_heap = PriorityQueue::new();
-
-        #[allow(clippy::mutable_key_type)]
         let mut visited_nodes = HashSet::new();
 
-        let entry_point_dist =
-            OrderedFloat(entry_point.borrow().squared_distance(query_node.clone()));
+        let entry_point_dist = OrderedFloat(entry_node.vector().squared_distance(query_vector));
 
-        visited_nodes.insert(entry_point.clone());
-        nearest_neighbors.push(entry_point.clone(), entry_point_dist);
-        candidate_heap.push(entry_point.clone(), Reverse(entry_point_dist));
+        visited_nodes.insert(entry_node);
+        nearest_neighbors.push(entry_node, entry_point_dist);
+        candidate_heap.push(entry_node, Reverse(entry_point_dist));
 
         while let Some((current_node, Reverse(current_dist))) = candidate_heap.pop() {
             let (_, furthest_neighbor_dist) = nearest_neighbors.peek_max().unwrap();
@@ -221,16 +196,16 @@ impl HNSW {
                 break;
             }
 
-            for neighbor in current_node.borrow().neighbors(layer_num) {
-                if visited_nodes.insert(neighbor.clone()) {
+            for neighbor_id in current_node.neighbor_ids(layer_num).unwrap_or(&Vec::new()) {
+                let neighbor = self.mem_table.get(neighbor_id).unwrap();
+                if visited_nodes.insert(neighbor) {
                     let neighbor_dist =
-                        OrderedFloat(neighbor.borrow().squared_distance(query_node.clone()));
+                        OrderedFloat(neighbor.vector().squared_distance(query_vector));
                     let (_, furthest_dist) = nearest_neighbors.peek_max().unwrap();
 
                     if neighbor_dist < *furthest_dist || nearest_neighbors.len() < ef {
-                        candidate_heap.push(neighbor.clone(), Reverse(neighbor_dist));
-
-                        nearest_neighbors.push(neighbor.clone(), neighbor_dist);
+                        candidate_heap.push(neighbor, Reverse(neighbor_dist));
+                        nearest_neighbors.push(neighbor, neighbor_dist);
 
                         if nearest_neighbors.len() > ef {
                             nearest_neighbors.pop_max();
@@ -239,8 +214,31 @@ impl HNSW {
                 }
             }
         }
-
         nearest_neighbors
+    }
+
+    pub fn search(&self, query: Vector, k: usize, ef: usize) -> Vec<Vector> {
+        if self.entry_id.is_none() {
+            return Vec::new();
+        }
+
+        let entry_id = self.entry_id.unwrap();
+        let mut entry_node = self.mem_table.get(&entry_id).unwrap();
+
+        for current_layer_num in (1..=self.top_layer_num).rev() {
+            let mut nearest_candidates =
+                self.search_layer(&query, entry_node, 1, current_layer_num);
+            entry_node = nearest_candidates.pop_min().unwrap().0;
+        }
+
+        let candidates = self.search_layer(&query, entry_node, ef, 0);
+
+        let mut result = candidates
+            .into_sorted_iter()
+            .map(|(node, _)| node.vector().clone())
+            .collect::<Vec<_>>();
+        result.truncate(k);
+        result
     }
 }
 
@@ -259,7 +257,7 @@ mod tests {
         ];
 
         for vector in &vectors {
-            hnsw.insert(vector.clone(), 16, 200, 4, 1);
+            hnsw.insert(vector.clone(), 16, 32, 200, 4);
         }
         (hnsw, vectors)
     }
@@ -267,9 +265,8 @@ mod tests {
     #[test]
     fn test_insert_creates_entry_point() {
         let (hnsw, _) = setup_hnsw();
-
         assert!(
-            hnsw.entry_point.is_some(),
+            hnsw.entry_id.is_some(),
             "HNSW should have an entry point after insertion."
         );
     }
